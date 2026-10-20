@@ -1,0 +1,61 @@
+# Pelagornis RefineUI Foundation — extracted from Figma
+# Source: https://www.figma.com/design/GOLyxZSkzbRIuMNBvxeqr3/Pelagornis-RefineUI-Foundation
+# Token prefix in Figma: Global/Colors/...
+
+figma:
+  file_key: GOLyxZSkzbRIuMNBvxeqr3
+  primary_row_node: "1:95"   # Light Gray → Black
+  secondary_section_node: "1:101"
+
+# Primary Color — neutral scale (4 swatches, not Tailwind-style gray_100–900)
+primary:
+  light_gray:
+    token: Global/Colors/Primary/Light Gray
+    hex: "#E6E6E6"
+  gray:
+    token: Global/Colors/Primary/Gray
+    hex: "#D4D4D4"
+  dark_gray:
+    token: Global/Colors/Primary/Dark Gray
+    hex: "#4D4D4D"
+  black:
+    token: Global/Colors/Primary/Black
+    hex: "#212121"
+
+# Secondary Color — semantic palettes (100–1000 per hue)
+# Full values live in Figma node 1:101. Families: red, orange, yellow, lime,
+# green, teal, blue, purple, magenta.
+secondary:
+  red_600:
+    token: Global/Colors/Red/600
+    hex: "#F94343"
+  orange_500:
+    token: Global/Colors/Orange/500
+    hex: "#EB7C3E"
+  yellow_300:
+    token: Global/Colors/Yellow/300
+    hex: "#F1B500"
+  green_600:
+    token: Global/Colors/Green/600
+    hex: "#229D28"
+  teal_600:
+    token: Global/Colors/Teal/600
+    hex: "#42949D"
+  blue_700:
+    token: Global/Colors/Blue/700
+    hex: "#3E68FF"
+  purple_700:
+    token: Global/Colors/Purple/700
+    hex: "#9E3FFF"
+  magenta_600:
+    token: Global/Colors/Magenta/600
+    hex: "#EF4592"
+
+# Discord embed: only the left stripe accepts one color (decimal int).
+# Use Primary/Black for rules; secondary hues for alerts/mod logs later.
+discord:
+  rules_embed: "#212121"       # Global/Colors/Primary/Black
+  enforcement: "#4D4D4D"       # Global/Colors/Primary/Dark Gray
+  warning: "#F1B500"             # Global/Colors/Yellow/300
+  error: "#F94343"               # Global/Colors/Red/600
+  success: "#229D28"             # Global/Colors/Green/600

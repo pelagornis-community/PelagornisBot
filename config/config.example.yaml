@@ -1,0 +1,85 @@
+# PelagornisBot Lite
+# 무료 운영: config/profiles/free-tier.yaml 복사 권장
+# docs/FREE_TIER.md
+
+guild_id: "YOUR_GUILD_ID"
+
+roles:
+  mod:
+    - "MOD_ROLE_ID"
+  admin:
+    - "ADMIN_ROLE_ID"
+
+onboarding:
+  welcome_channel_id: "WELCOME_CHANNEL_ID"
+  welcome_dm: false
+  welcome_template: "환영합니다, {user}! 커뮤니티 규칙을 확인해 주세요: /rules"
+  first_message_reminder: true
+  first_message_template: "첫 메시지 감사합니다. 규칙은 /rules 로 확인할 수 있어요."
+  rules:
+    - title: "존중하기"
+      body: "다른 멤버를 존중하고, 비방·혐오·괴롭힘은 금지합니다."
+    - title: "스팸 금지"
+      body: "도배, 무단 홍보, 반복 링크는 삭제될 수 있습니다."
+    - title: "링크 & 자료"
+      body: "신규 멤버는 가입 후 24시간 동안 링크 공유가 제한될 수 있습니다."
+
+moderation:
+  banned_words:
+    - "example_bad_word"
+  banned_patterns: []
+  rate_limit:
+    window_seconds: 10
+    max_messages: 5
+    action: timeout
+    timeout_minutes: 10
+  new_user:
+    link_restrict_hours: 24
+    exempt_role_ids: []
+  log_channel_id: "MOD_LOG_CHANNEL_ID"
+
+promotion:
+  enabled: true
+  # X + YouTube 모두 이 채널 하나로 (예: #updates)
+  discord_channel_id: "PROMO_CHANNEL_ID"
+  poll_minutes: 30
+  x:
+    enabled: true
+    # X 네이티브 RSS 없음 → RSSHub 등으로 만든 피드 URL
+    rss_feed_url: "https://rsshub.example/twitter/user/your_handle"
+  youtube:
+    enabled: true
+    # Lite 권장: API 키 없이 YouTube Atom RSS
+    rss_feed_url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCxxxxxxxx"
+    use_api: false
+    channel_id: "UCxxxxxxxx"
+
+announcement:
+  default_channel_id: "ANNOUNCE_CHANNEL_ID"
+  subscriber_role_id: "NOTIFY_ROLE_ID"
+  allow_mention_here: false
+
+faq:
+  enabled: true
+  cooldown_seconds: 30
+  channels_only: []
+  rules:
+    - keywords: ["download", "다운로드"]
+      response: "다운로드: https://example.com/download"
+    - keywords: ["support", "지원", "문의"]
+      response: "지원: https://example.com/support"
+
+feedback:
+  channel_id: "FEEDBACK_CHANNEL_ID"
+  allow_anonymous: true
+  store_db: false
+
+security:
+  enabled: true
+  action: delete
+  patterns:
+    - name: openai_key
+      regex: "sk-[a-zA-Z0-9]{20,}"
+    - name: github_pat
+      regex: "ghp_[a-zA-Z0-9]{20,}"
+  notify_mod_channel: true

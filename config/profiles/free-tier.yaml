@@ -1,0 +1,86 @@
+# PelagornisBot Lite — 무료($0) 운영 프로필
+# config/config.yaml 작성 시 아래 값을 우선 적용하거나, 이 파일을 복사해 채운 뒤 merge.
+# 상세: docs/FREE_TIER.md
+
+guild_id: "YOUR_GUILD_ID"
+
+roles:
+  mod: ["MOD_ROLE_ID"]
+  admin: ["ADMIN_ROLE_ID"]
+
+onboarding:
+  welcome_channel_id: "WELCOME_CHANNEL_ID"
+  welcome_dm: false
+  welcome_template: "Welcome, {user}! Run `/rules` before you chat."
+  first_message_reminder: true
+  first_message_template: "Run `/rules` to read the server rules."
+  rules_embed:
+    title: "Server Rules"
+    color_hex: "#212121"
+    description: "Welcome! Please read and follow the rules below."
+    footer: "Warning → Mute → Ban · `/feedback`"
+  rules:
+    - emoji: "⭐"
+      title: "Respect"
+      body: "Be respectful · No harassment · 13+ only"
+    - emoji: "🤖"
+      title: "AI & APIs"
+      body: "No API keys · No jailbreaks"
+    - emoji: "📢"
+      title: "Spam"
+      body: "No spam or unsolicited promotion"
+    - emoji: "👮"
+      title: "Staff"
+      body: "Follow mod instructions · `/feedback`"
+
+moderation:
+  banned_words: []
+  banned_patterns: []
+  rate_limit:
+    window_seconds: 10
+    max_messages: 5
+    action: timeout
+    timeout_minutes: 10
+  new_user:
+    link_restrict_hours: 24
+    exempt_role_ids: []
+  log_channel_id: "MOD_LOG_CHANNEL_ID"
+
+promotion:
+  enabled: true
+  discord_channel_id: "UPDATES_CHANNEL_ID"
+  poll_minutes: 30
+  x:
+    enabled: false
+    # RSSHub 로컬: docker run -d -p 1200:1200 diygod/rsshub
+    rss_feed_url: "http://127.0.0.1:1200/twitter/user/YOUR_X_USERNAME"
+  youtube:
+    enabled: true
+    use_api: false
+  # channel_id만 넣어도 RSS URL 자동 생성 (권장)
+    channel_id: "UCxxxxxxxx"
+    # rss_feed_url: "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
+
+announcement:
+  default_channel_id: "ANNOUNCE_CHANNEL_ID"
+  subscriber_role_id: "NOTIFY_ROLE_ID"
+  allow_mention_here: false
+
+faq:
+  enabled: true
+  cooldown_seconds: 30
+  channels_only: []
+  rules: []
+
+feedback:
+  channel_id: "FEEDBACK_CHANNEL_ID"
+  allow_anonymous: true
+  store_db: false
+
+security:
+  enabled: true
+  action: delete
+  patterns:
+    - name: openai_key
+      regex: "sk-[a-zA-Z0-9]{20,}"
+  notify_mod_channel: true

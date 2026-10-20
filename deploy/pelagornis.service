@@ -1,0 +1,15 @@
+[Unit]
+Description=PelagornisBot Lite (Discord)
+After=network-online.target
+
+[Service]
+Type=simple
+User=pelagornis
+WorkingDirectory=/opt/pelagornis-bot
+EnvironmentFile=/opt/pelagornis-bot/.env
+ExecStart=/opt/pelagornis-bot/bin/pelagornis
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
