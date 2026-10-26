@@ -3,15 +3,15 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/pelagornis/communityos/internal/config"
-	"github.com/pelagornis/communityos/internal/discord/delivery"
-	"github.com/pelagornis/communityos/internal/discord/gateway"
-	"github.com/pelagornis/communityos/internal/httpserver"
-	"github.com/pelagornis/communityos/internal/modules/feeds"
-	"github.com/pelagornis/communityos/internal/scheduler"
-	"github.com/pelagornis/communityos/internal/storage"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
-	"github.com/pelagornis/communityos/internal/workflow"
+	"github.com/pelagornis/pelagornis-bot/internal/config"
+	"github.com/pelagornis/pelagornis-bot/internal/discord/delivery"
+	"github.com/pelagornis/pelagornis-bot/internal/discord/gateway"
+	"github.com/pelagornis/pelagornis-bot/internal/httpserver"
+	"github.com/pelagornis/pelagornis-bot/internal/modules/feeds"
+	"github.com/pelagornis/pelagornis-bot/internal/scheduler"
+	"github.com/pelagornis/pelagornis-bot/internal/storage"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
+	"github.com/pelagornis/pelagornis-bot/internal/workflow"
 	"log/slog"
 	"net/http"
 	"os"
@@ -30,13 +30,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	db, e := postgres.Open(ctx, cfg.DatabaseURL)
+	db, e := sqlite.Open(ctx, cfg.SQLitePath)
 	if e != nil {
 		slog.Error("database", "error", e)
 		os.Exit(1)
 	}
 	defer db.Close()
-	if e = storage.Migrate(ctx, db.Pool); e != nil {
+	if e = storage.Migrate(ctx, db.DB); e != nil {
 		slog.Error("migrations", "error", e)
 		os.Exit(1)
 	}
@@ -52,8 +52,8 @@ func main() {
 	defer gw.Close()
 	discordDelivery := delivery.Service{Discord: gw.Session()}
 	poller := feeds.Poller{Store: db, Client: feeds.New()}
-	handler := scheduler.AppHandler{Feeds: poller, Workflow: workflow.Executor{Delivery: discordDelivery}, Delivery: func(c context.Context, j postgres.Job) error { return discordDelivery.HandleFeed(c, db, j) }}
-	go scheduler.Worker{Store: db, Handler: handler, Concurrency: cfg.Workers}.Run(ctx)
+	handler := scheduler.AppHandler{Feeds: poller, Workflow: workflow.Executor{Delivery: discordDelivery}, Delivery: func(c context.Context, j sqlite.Job) error { return discordDelivery.HandleFeed(c, db, j) }}
+	go scheduler.Worker{Store: db, Handler: handler}.Run(ctx)
 	go scheduler.RunDueEnqueuer(ctx, poller)
 	srv := httpserver.New(cfg, db)
 	go srv.Run(ctx)

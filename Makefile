@@ -1,6 +1,6 @@
 SHELL := /bin/sh
-GOCACHE ?= /tmp/communityos-gocache
-GOMODCACHE ?= /tmp/communityos-gomod
+GOCACHE ?= /tmp/pelagornisbot-gocache
+GOMODCACHE ?= /tmp/pelagornisbot-gomod
 GO := GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go
 COMPOSE := docker compose -f deployments/compose.yaml
 
@@ -8,7 +8,7 @@ COMPOSE := docker compose -f deployments/compose.yaml
 .PHONY: help fmt test lint check build build-arm64 run migrate compose-config up down logs smoke clean
 
 help:
-	@printf '%s\n' 'CommunityOS targets:' '  make fmt             Format Go source.' '  make test            Run all unit tests.' '  make lint            Run go vet.' '  make check           Check formatting, tests, and vet.' '  make build           Build bin/communityos.' '  make build-arm64     Cross-build Linux ARM64.' '  make migrate         Apply PostgreSQL migrations only.' '  make run             Start CommunityOS.' '  make compose-config  Validate Compose.' '  make up|down|logs    Manage Compose.' '  make smoke           Offline smoke checks.'
+	@printf '%s\n' 'PelagornisBot targets:' '  make fmt             Format Go source.' '  make test            Run all unit tests.' '  make lint            Run go vet.' '  make check           Check formatting, tests, and vet.' '  make build           Build bin/pelagornisbot.' '  make build-arm64     Cross-build Linux ARM64.' '  make migrate         Apply SQLite migrations only.' '  make run             Start PelagornisBot.' '  make compose-config  Validate Compose.' '  make up|down|logs    Manage Compose.' '  make smoke           Offline smoke checks.'
 
 fmt:
 	gofmt -w $$(find cmd internal -name '*.go' -type f)
@@ -22,12 +22,12 @@ check:
 	$(MAKE) lint
 build:
 	mkdir -p bin
-	$(GO) build -trimpath -o bin/communityos ./cmd/communityos
+	$(GO) build -trimpath -o bin/pelagornisbot ./cmd/pelagornisbot
 build-arm64:
 	mkdir -p bin
-	GOOS=linux GOARCH=arm64 $(GO) build -trimpath -o bin/communityos-linux-arm64 ./cmd/communityos
+	GOOS=linux GOARCH=arm64 $(GO) build -trimpath -o bin/pelagornisbot-linux-arm64 ./cmd/pelagornisbot
 run:
-	$(GO) run ./cmd/communityos
+	$(GO) run ./cmd/pelagornisbot
 migrate:
 	$(GO) run ./cmd/migrate
 compose-config:
@@ -42,4 +42,4 @@ smoke:
 	$(GO) test ./internal/... ./cmd/...
 	$(MAKE) build-arm64
 clean:
-	rm -f bin/communityos bin/communityos-linux-arm64
+	rm -f bin/pelagornisbot bin/pelagornisbot-linux-arm64

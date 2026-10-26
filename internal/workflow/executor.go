@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/pelagornis/communityos/internal/discord/delivery"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
+	"github.com/pelagornis/pelagornis-bot/internal/discord/delivery"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
 )
 
 type Executor struct{ Delivery delivery.Service }
@@ -14,7 +14,7 @@ type actionJob struct {
 	Event  map[string]string `json:"event"`
 }
 
-func (e Executor) Handle(ctx context.Context, j postgres.Job) error {
+func (e Executor) Handle(ctx context.Context, j sqlite.Job) error {
 	if j.Kind != "workflow.action" {
 		return fmt.Errorf("unsupported job %s", j.Kind)
 	}
@@ -27,7 +27,7 @@ func (e Executor) Handle(ctx context.Context, j postgres.Job) error {
 		channel := p.Event["channel_id"]
 		content := p.Event["message"]
 		if content == "" {
-			content = "CommunityOS workflow event"
+			content = "PelagornisBot workflow event"
 		}
 		_, err := e.Delivery.Send(ctx, channel, content)
 		return err

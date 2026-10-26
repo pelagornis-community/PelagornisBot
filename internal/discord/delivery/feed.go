@@ -3,10 +3,10 @@ package delivery
 import (
 	"context"
 	"encoding/json"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
 )
 
-func (s Service) HandleFeed(c context.Context, store *postgres.Store, j postgres.Job) error {
+func (s Service) HandleFeed(c context.Context, store *sqlite.Store, j sqlite.Job) error {
 	var p struct {
 		DeliveryID string `json:"delivery_id"`
 		ChannelID  string `json:"channel_id"`

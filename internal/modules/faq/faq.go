@@ -2,14 +2,14 @@ package faq
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"database/sql"
 )
 
-type Service struct{ db *pgxpool.Pool }
+type Service struct{ db *sql.DB }
 
-func New(db *pgxpool.Pool) *Service { return &Service{db} }
+func New(db *sql.DB) *Service { return &Service{db} }
 func (s *Service) Search(c context.Context, guild, q string) ([]string, error) {
-	r, e := s.db.Query(c, `select question||E'\n'||answer from faq_entries where guild_id=$1 and status='published' and (question ilike '%'||$2||'%' or answer ilike '%'||$2||'%') order by question limit 20`, guild, q)
+	r, e := s.db.QueryContext(c, `select question||char(10)||answer from faq_entries where guild_id=? and status='published' and (lower(question) like '%'||lower(?)||'%' or lower(answer) like '%'||lower(?)||'%') order by question limit 20`, guild, q, q)
 	if e != nil {
 		return nil, e
 	}

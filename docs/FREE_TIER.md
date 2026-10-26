@@ -121,7 +121,7 @@ promotion:
 feedback:
   store_db: false
 
-# env 불필요: YOUTUBE_API_KEY, REDIS_URL, DATABASE_URL
+# env 불필요: YOUTUBE_API_KEY, REDIS_URL
 ```
 
 환경 변수는 **Discord 토큰만** 필수:
@@ -183,7 +183,7 @@ promotion:
 - [ ] X `rss_feed_url` 동작 확인 (브라우저/curl)
 - [ ] `poll_minutes` ≥ 30
 - [ ] `feedback.store_db: false`
-- [ ] `REDIS_URL` / `DATABASE_URL` 미설정
+- [ ] `REDIS_URL` 미설정
 - [ ] Discord Message Content Intent (모더레이션·FAQ 시)
 
 ### 배포 후

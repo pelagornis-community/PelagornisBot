@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/mmcdole/gofeed"
-	"github.com/pelagornis/communityos/internal/security"
+	"github.com/pelagornis/pelagornis-bot/internal/security"
 	"io"
 	"net/http"
 	"net/url"

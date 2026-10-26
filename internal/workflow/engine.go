@@ -10,10 +10,14 @@ type Definition struct {
 	Conditions []Condition `json:"conditions"`
 	Actions    []Action    `json:"actions"`
 }
-type Condition struct{ Field, Op, Value string }
+type Condition struct {
+	Field string `json:"field"`
+	Op    string `json:"op"`
+	Value string `json:"value"`
+}
 type Action struct {
-	Type  string
-	Delay time.Duration
+	Type  string        `json:"type"`
+	Delay time.Duration `json:"delay"`
 }
 
 func (d Definition) Validate() error {

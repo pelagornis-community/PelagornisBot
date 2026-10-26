@@ -6,8 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"github.com/go-chi/chi/v5"
-	"github.com/pelagornis/communityos/internal/config"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
+	"github.com/pelagornis/pelagornis-bot/internal/config"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
 	"io"
 	"net/http"
 	"strings"
@@ -16,14 +16,14 @@ import (
 type Server struct {
 	s   *http.Server
 	cfg config.Config
-	db  *postgres.Store
+	db  *sqlite.Store
 }
 
-func New(c config.Config, d *postgres.Store) *Server {
+func New(c config.Config, d *sqlite.Store) *Server {
 	x := &Server{cfg: c, db: d}
 	r := chi.NewRouter()
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok\n")) })
-	r.Get("/metrics", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("communityos_up 1\n")) })
+	r.Get("/metrics", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("pelagornisbot_up 1\n")) })
 	r.Post("/webhooks/github", x.github)
 	x.s = &http.Server{Addr: c.HTTPListen, Handler: r, ReadHeaderTimeout: 5e9, MaxHeaderBytes: 8192}
 	return x

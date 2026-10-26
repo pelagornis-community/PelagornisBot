@@ -2,18 +2,18 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"embed"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-func Migrate(ctx context.Context, p *pgxpool.Pool) error {
+func Migrate(ctx context.Context, db *sql.DB) error {
 	goose.SetBaseFS(migrations)
-	db := stdlib.OpenDB(*p.Config().ConnConfig)
-	defer db.Close()
+	if e := goose.SetDialect("sqlite3"); e != nil {
+		return e
+	}
 	return goose.UpContext(ctx, db, "migrations")
 }

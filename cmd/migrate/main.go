@@ -5,21 +5,21 @@ import (
 	"log"
 	"os"
 
-	"github.com/pelagornis/communityos/internal/storage"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
+	"github.com/pelagornis/pelagornis-bot/internal/storage"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
 )
 
 func main() {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		log.Fatal("DATABASE_URL is required")
+	path := os.Getenv("SQLITE_PATH")
+	if path == "" {
+		path = "data/pelagornisbot.db"
 	}
-	db, err := postgres.Open(context.Background(), url)
+	db, err := sqlite.Open(context.Background(), path)
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}
 	defer db.Close()
-	if err := storage.Migrate(context.Background(), db.Pool); err != nil {
+	if err := storage.Migrate(context.Background(), db.DB); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
 }

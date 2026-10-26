@@ -56,3 +56,4 @@ func validRepo(s string) bool {
 	x := strings.Split(s, "/")
 	return len(x) == 2 && x[0] != "" && x[1] != "" && !strings.Contains(s, "..")
 }
+func ValidRepo(s string) bool { return validRepo(s) }

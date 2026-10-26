@@ -1,19 +1,11 @@
 services:
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: communityos
-      POSTGRES_USER: communityos
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
-    volumes: [postgres:/var/lib/postgresql/data]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U communityos"], interval: 10s, timeout: 5s, retries: 5 }
-    restart: unless-stopped
-    mem_limit: 1g
-  communityos:
+  pelagornisbot:
     build: { context: .., dockerfile: deployments/Dockerfile }
     env_file: ../.env
-    depends_on: { db: { condition: service_healthy } }
+    environment:
+      SQLITE_PATH: /data/pelagornisbot.db
+    volumes: [sqlite_data:/data]
     restart: unless-stopped
-    mem_limit: 768m
-    cpus: 1.5
-volumes: { postgres: {} }
+    mem_limit: 384m
+    cpus: 0.5
+volumes: { sqlite_data: {} }

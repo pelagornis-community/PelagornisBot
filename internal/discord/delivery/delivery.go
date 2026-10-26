@@ -15,7 +15,7 @@ func (s Service) Send(ctx context.Context, channel, content string) (string, err
 	if channel == "" {
 		return "", fmt.Errorf("channel required")
 	}
-	m, e := s.Discord.ChannelMessageSendComplex(channel, &discordgo.MessageSend{Content: content, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}})
+	m, e := s.Discord.ChannelMessageSendComplex(channel, &discordgo.MessageSend{Embeds: []*discordgo.MessageEmbed{{Title: "📰 New update", Description: content, Color: 0x5865F2, Footer: &discordgo.MessageEmbedFooter{Text: "Pelagornis · Feed delivery"}}}, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}})
 	if e != nil {
 		return "", e
 	}

@@ -3,18 +3,18 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"github.com/pelagornis/communityos/internal/modules/feeds"
-	"github.com/pelagornis/communityos/internal/storage/postgres"
-	"github.com/pelagornis/communityos/internal/workflow"
+	"github.com/pelagornis/pelagornis-bot/internal/modules/feeds"
+	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
+	"github.com/pelagornis/pelagornis-bot/internal/workflow"
 )
 
 type AppHandler struct {
 	Feeds    feeds.Poller
 	Workflow workflow.Executor
-	Delivery func(context.Context, postgres.Job) error
+	Delivery func(context.Context, sqlite.Job) error
 }
 
-func (h AppHandler) Handle(c context.Context, j postgres.Job) error {
+func (h AppHandler) Handle(c context.Context, j sqlite.Job) error {
 	switch j.Kind {
 	case "feed.poll":
 		return h.Feeds.Handle(c, j)

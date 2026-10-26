@@ -122,7 +122,7 @@ DISCORD_CLIENT_ID=      # slash 등록
 DISCORD_GUILD_ID=       # 개발 시
 ```
 
-그 외 `YOUTUBE_API_KEY`, `REDIS_URL`, `DATABASE_URL` — **설정하지 않음**.
+그 외 `YOUTUBE_API_KEY`, `REDIS_URL` — **설정하지 않음**. 로컬 저장소는 `SQLITE_PATH`로 설정한다.
 
 ---
 
