@@ -52,6 +52,9 @@ func main() {
 	defer gw.Close()
 	discordDelivery := delivery.Service{Discord: gw.Session()}
 	poller := feeds.Poller{Store: db, Client: feeds.New()}
+	if e = poller.EnqueueDue(ctx); e != nil {
+		slog.Warn("enqueue startup feed checks", "error", e)
+	}
 	handler := scheduler.AppHandler{Feeds: poller, Workflow: workflow.Executor{Delivery: discordDelivery}, Delivery: func(c context.Context, j sqlite.Job) error { return discordDelivery.HandleFeed(c, db, j) }}
 	go scheduler.Worker{Store: db, Handler: handler}.Run(ctx)
 	go scheduler.RunDueEnqueuer(ctx, poller)

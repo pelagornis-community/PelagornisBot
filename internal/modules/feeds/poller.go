@@ -30,11 +30,18 @@ func (p Poller) EnqueueDue(c context.Context) error {
 		if e = rows.Scan(&id, &guild); e != nil {
 			return e
 		}
-		if e = p.Store.InsertJob(c, guild, "feed.poll", `{"source_id":"`+id+`"}`, "feed.poll:"+id+":"+time.Now().UTC().Format("200601021504")); e != nil {
+		if e = p.enqueue(c, guild, id, "due:"+time.Now().UTC().Format("200601021504")); e != nil {
 			return e
 		}
 	}
 	return rows.Err()
+}
+func (p Poller) enqueue(c context.Context, guild, sourceID, keySuffix string) error {
+	payload, err := json.Marshal(map[string]string{"source_id": sourceID})
+	if err != nil {
+		return err
+	}
+	return p.Store.InsertJob(c, guild, "feed.poll", string(payload), "feed.poll:"+sourceID+":"+keySuffix)
 }
 func (p Poller) Handle(c context.Context, j sqlite.Job) error {
 	if j.Kind != "feed.poll" {
@@ -130,7 +137,15 @@ func (p Poller) AddRelease(c context.Context, guild, repo, channel string, inter
 	}
 	var id string
 	e := p.Store.DB.QueryRowContext(c, `insert into feed_sources(id,guild_id,kind,repo,channel_id,interval_seconds) values(lower(hex(randomblob(16))),?,'github_release',?,?,?) returning id`, guild, repo, channel, interval).Scan(&id)
-	return id, e
+	if e != nil {
+		return "", e
+	}
+	// A newly configured release source should be checked immediately; it must
+	// not wait for the one-minute due-work scheduler tick.
+	if e = p.enqueue(c, guild, id, fmt.Sprintf("registered:%d", time.Now().UnixNano())); e != nil {
+		return "", e
+	}
+	return id, nil
 }
 func (p Poller) List(c context.Context, guild string) ([]Source, error) {
 	rows, e := p.Store.DB.QueryContext(c, `select id,guild_id,kind,coalesce(url,''),coalesce(repo,''),channel_id,coalesce(etag,''),coalesce(last_modified,''),interval_seconds from feed_sources where guild_id=? order by id`, guild)

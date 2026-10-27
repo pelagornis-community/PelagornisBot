@@ -287,10 +287,10 @@ func (g *Gateway) welcomeCommand(s *discordgo.Session, i *discordgo.InteractionC
 	}
 	rulesURL := "https://discord.com/channels/" + i.GuildID + "/1563951289027666122"
 	ticket := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "ticket_open", Guild: i.GuildID})
-	message := &discordgo.MessageSend{Components: []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: "# ✦ Welcome to Pelagornis\nA calm place to learn, build, and help one another.\n\n## 📌 Get started\n1. Read the server rules\n2. Complete an application if one is posted\n3. Use the right channel and check its pins\n\n## 🛟 Need help?\nOpen a private ticket and the staff team will assist you.\n\n## 🔒 Safety first\nNever share passwords, API keys, tokens, or recovery codes.\n\n-# Pelagornis · Welcome aboard"}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+	message := &discordgo.MessageSend{Components: []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: "# ✦ Welcome to Pelagornis\nA calm place to learn, build, and help one another.\n\n## 📌 Get started\n1. Read the server rules\n2. Complete an application if one is posted\n3. Use the right channel and check its pins\n\n## 🛟 Need help?\nOpen a private ticket and the staff team will assist you.\n\n## 🔒 Safety first\nNever share passwords, API keys, tokens, or recovery codes.\n\n-# Pelagornis · Welcome aboard"}}}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{URL: rulesURL, Label: "Read the rules", Emoji: &discordgo.ComponentEmoji{Name: "📜"}, Style: discordgo.LinkButton},
 		discordgo.Button{CustomID: ticket, Label: "Get support", Emoji: &discordgo.ComponentEmoji{Name: "🛟"}, Style: discordgo.SecondaryButton},
-	}}}}}, Flags: discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}
+	}}}, Flags: discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}
 	if file, err := openWelcomeHero(); err == nil {
 		message.Files = []*discordgo.File{file}
 		container := message.Components[0].(discordgo.Container)
@@ -538,7 +538,7 @@ func (g *Gateway) releaseCommand(s *discordgo.Session, i *discordgo.InteractionC
 			g.reply(s, i, "Release source was not added: "+err.Error(), true)
 			return
 		}
-		g.reply(s, i, "GitHub release source added: `"+fid+"`.", true)
+		g.reply(s, i, "GitHub release source added: `"+fid+"`. An initial release check is queued now.", true)
 	case "list":
 		all, err := g.feeds.List(context.Background(), i.GuildID)
 		if err != nil {
@@ -964,7 +964,7 @@ func (g *Gateway) modal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if err != nil {
 				g.reply(s, i, "Release source was not added: "+err.Error(), true)
 			} else {
-				g.reply(s, i, "GitHub release source added: `"+fid+"`.", true)
+				g.reply(s, i, "GitHub release source added: `"+fid+"`. An initial release check is queued now.", true)
 			}
 			return
 		}
@@ -1175,9 +1175,9 @@ func (g *Gateway) replyEmbedComponents(s *discordgo.Session, i *discordgo.Intera
 	if embed.Footer != nil {
 		text += "\n\n-# " + embed.Footer.Text
 	}
-	inside := []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}}
-	inside = append(inside, components...)
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: []discordgo.MessageComponent{discordgo.Container{Components: inside}}, Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}})
+	all := []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}}}}
+	all = append(all, components...)
+	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: all, Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}})
 }
 func ptrInt(v int) *int { return &v }
 func (g *Gateway) memberJoin(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
