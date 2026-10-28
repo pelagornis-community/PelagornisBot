@@ -4,3 +4,12 @@ config/config.yaml
 data/
 *.log
 .DS_Store
+# Compiled Go binary
+/pelagornisbot
+
+# SQLite backups and temporary database files
+/backups/
+*.db-shm
+*.db-wal
+*.tmp-shm
+*.tmp-wal
