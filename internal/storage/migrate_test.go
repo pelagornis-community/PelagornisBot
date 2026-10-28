@@ -22,10 +22,10 @@ func TestSQLiteMigrationIsRepeatable(t *testing.T) {
 		t.Fatalf("repeat migration: %v", err)
 	}
 	var count int
-	if err = db.DB.QueryRow(`select count(*) from sqlite_master where type='table' and name in ('forms','jobs','form_review_channels','project_automation_settings','github_notification_channels')`).Scan(&count); err != nil {
+	if err = db.DB.QueryRow(`select count(*) from sqlite_master where type='table' and name in ('forms','jobs','form_review_channels','project_automation_settings','github_notification_channels','github_webhook_settings','github_projects')`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 5 {
+	if count != 7 {
 		t.Fatalf("expected SQLite schema tables, got %d", count)
 	}
 }
