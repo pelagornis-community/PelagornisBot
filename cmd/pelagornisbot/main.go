@@ -8,6 +8,7 @@ import (
 	"github.com/pelagornis/pelagornis-bot/internal/discord/gateway"
 	"github.com/pelagornis/pelagornis-bot/internal/httpserver"
 	"github.com/pelagornis/pelagornis-bot/internal/modules/feeds"
+	githubapi "github.com/pelagornis/pelagornis-bot/internal/modules/github"
 	"github.com/pelagornis/pelagornis-bot/internal/scheduler"
 	"github.com/pelagornis/pelagornis-bot/internal/storage"
 	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
@@ -55,7 +56,7 @@ func main() {
 	if e = poller.EnqueueAll(ctx); e != nil {
 		slog.Warn("enqueue startup feed catch-up", "error", e)
 	}
-	handler := scheduler.AppHandler{Feeds: poller, Workflow: workflow.Executor{Delivery: discordDelivery}, Delivery: func(c context.Context, j sqlite.Job) error { return discordDelivery.HandleFeed(c, db, j) }}
+	handler := scheduler.AppHandler{Feeds: poller, Workflow: workflow.Executor{Delivery: discordDelivery}, Delivery: func(c context.Context, j sqlite.Job) error { return discordDelivery.HandleFeed(c, db, j) }, GitHub: githubapi.WebhookService{Store: db, Discord: gw.Session(), PublicReleaseChannel: "1091734148957339749"}}
 	go scheduler.Worker{Store: db, Handler: handler}.Run(ctx)
 	go scheduler.RunDueEnqueuer(ctx, poller)
 	srv := httpserver.New(cfg, db)

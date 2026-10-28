@@ -5,10 +5,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"github.com/pelagornis/pelagornis-bot/internal/config"
 	"github.com/pelagornis/pelagornis-bot/internal/storage/sqlite"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -38,7 +40,7 @@ func (x *Server) github(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	b, e := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	b, e := io.ReadAll(http.MaxBytesReader(w, r.Body, 2<<20))
 	if e != nil {
 		http.Error(w, "too large", 413)
 		return
@@ -49,6 +51,53 @@ func (x *Server) github(w http.ResponseWriter, r *http.Request) {
 	if sig == "" || !hmac.Equal([]byte(sig), []byte(hex.EncodeToString(m.Sum(nil)))) {
 		http.Error(w, "invalid signature", 401)
 		return
+	}
+	event := r.Header.Get("X-GitHub-Event")
+	deliveryID := r.Header.Get("X-GitHub-Delivery")
+	if event == "" || deliveryID == "" {
+		http.Error(w, "missing GitHub delivery headers", http.StatusBadRequest)
+		return
+	}
+	if event == "ping" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	var envelope struct {
+		Organization struct {
+			Login string `json:"login"`
+		} `json:"organization"`
+		Repository struct {
+			Owner struct {
+				Login string `json:"login"`
+			} `json:"owner"`
+		} `json:"repository"`
+	}
+	if e = json.Unmarshal(b, &envelope); e != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	organization := envelope.Organization.Login
+	if organization == "" {
+		organization = envelope.Repository.Owner.Login
+	}
+	if organization == "" {
+		http.Error(w, "missing organization", http.StatusUnprocessableEntity)
+		return
+	}
+	guild, e := x.db.GuildForGitHubOrganization(r.Context(), organization)
+	if e != nil {
+		// Do not expose configured organization names to an arbitrary caller.
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	queued, e := x.db.QueueGitHubWebhook(r.Context(), guild, deliveryID, event, b)
+	if e != nil {
+		slog.Error("queue GitHub webhook", "event", event, "delivery", deliveryID, "error", e)
+		http.Error(w, "queue unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !queued {
+		slog.Info("ignored duplicate GitHub webhook", "event", event, "delivery", deliveryID)
 	}
 	w.WriteHeader(202)
 }

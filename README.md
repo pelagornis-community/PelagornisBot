@@ -60,7 +60,7 @@ The `Read the rules` button links directly to the configured Discord rules chann
 
 1. Run `/setup` and choose the staff role, member role, pending role, and private staff review channel.
 2. In the same dashboard, select the private parent category for future GitHub project rooms. For this server, select <#1091726089174392833>.
-3. Set **Security alerts** to <#1565011226512203806> and **GitHub audit** to <#1565011279335129248>. These remain private staff destinations for future GitHub webhook routing.
+3. Set **Security alerts** to <#1565011226512203806>, **GitHub audit** to <#1565011279335129248>, and enter the GitHub organization (`pelagornis`) in the same dashboard.
 4. Run `/welcome` in the welcome channel.
 5. Run `/form` to create an application form; publish it using the returned ID if applications are needed.
 6. Run `/panel` in a support channel, or `/role` in a roles channel.
@@ -101,4 +101,4 @@ The bot deliberately focuses on a small, single-instance community. Workflow def
 - Use a stable, unique `SESSION_SECRET`; signed component IDs rely on it.
 - Components V2 buttons, selectors, and modal submissions re-check server-management permission for administrative actions. RSS and GitHub Release sources cannot be added by ordinary members.
 - Restrict staff review channels and backups to trusted operators.
-- Enable GitHub webhooks only after setting `GITHUB_WEBHOOK_SECRET`.
+- Enable GitHub webhooks only after setting `GITHUB_WEBHOOK_SECRET`. Set the GitHub Payload URL to `https://<your-domain>/webhooks/github`, use JSON, keep SSL verification enabled, and select only Repositories, Releases, Deployment statuses, Workflow jobs, Pull requests, Issues, and Discussions. Configure the matching GitHub organization in `/setup`; unsigned, duplicate, and unmatched deliveries are ignored.

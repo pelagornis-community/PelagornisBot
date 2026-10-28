@@ -235,6 +235,7 @@ func (g *Gateway) dashboard(s *discordgo.Session, i *discordgo.InteractionCreate
 		button("setup_project_category_pick", "Project category", "📁", discordgo.SecondaryButton)
 		button("setup_security_channel_pick", "Security alerts", "🔐", discordgo.SecondaryButton)
 		button("setup_audit_channel_pick", "GitHub audit", "🧾", discordgo.SecondaryButton)
+		button("setup_github_org_modal", "GitHub organization", "🐙", discordgo.PrimaryButton)
 	case "form":
 		title, description = "📝 Form center", "Create an application form or configure where staff reviews are delivered."
 		button("form_create", "Create application", "➕", discordgo.PrimaryButton)
@@ -293,10 +294,20 @@ func (g *Gateway) setupDescription(guild string) string {
 		}
 		return "• " + label + ": _not set_"
 	}
+	text := func(value string, err error, label string) string {
+		if err == nil && value != "" {
+			return "• " + label + ": `" + value + "`"
+		}
+		if err != nil && err != sql.ErrNoRows {
+			return "• " + label + ": _could not load_"
+		}
+		return "• " + label + ": _not set_"
+	}
 	review, reviewErr := g.forms.ReviewChannel(ctx, guild)
 	category, categoryErr := g.db.ProjectCategory(ctx, guild)
 	security, securityErr := g.db.GitHubNotificationChannel(ctx, guild, "security")
 	audit, auditErr := g.db.GitHubNotificationChannel(ctx, guild, "audit")
+	organization, organizationErr := g.db.GitHubOrganization(ctx, guild)
 	return "Configure the server once, then future project automation can inherit these permissions.\n\n" + strings.Join([]string{
 		"## Access & onboarding",
 		role("staff", "Staff role"),
@@ -308,6 +319,7 @@ func (g *Gateway) setupDescription(guild string) string {
 		channel(category, categoryErr, "Project parent category"),
 		channel(security, securityErr, "Security alerts"),
 		channel(audit, auditErr, "GitHub audit"),
+		text(organization, organizationErr, "GitHub organization"),
 		"-# New project rooms will be private to the configured staff role. GitHub webhook delivery is configured separately.",
 	}, "\n")
 }
@@ -832,6 +844,13 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: title, Description: description, Color: 0x5865F2}, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{MenuType: discordgo.ChannelSelectMenu, CustomID: custom, Placeholder: "Select a private text channel", MinValues: ptrInt(1), MaxValues: 1, ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText}}}}}, true)
 		return
 	}
+	if id.Action == "setup_github_org_modal" {
+		custom := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "setup_github_org_submit", Guild: i.GuildID, User: i.Member.User.ID})
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: custom, Title: "GitHub organization", Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "organization", Label: "Organization name", Placeholder: "pelagornis", Style: discordgo.TextInputShort, Required: true, MaxLength: 100}}}}}}); err != nil {
+			slog.Error("GitHub organization modal response failed", "error", err)
+		}
+		return
+	}
 	if id.Action == "setup_member_set" || id.Action == "setup_pending_set" || id.Action == "setup_staff_set" || id.Action == "setup_review_set" || id.Action == "setup_project_category_set" || id.Action == "setup_security_channel_set" || id.Action == "setup_audit_channel_set" || id.Action == "role_publish_set" {
 		values := i.MessageComponentData().Values
 		if len(values) != 1 {
@@ -1025,6 +1044,32 @@ func (g *Gateway) modal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			text += entry + "\n\n"
 		}
 		g.reply(s, i, text, true)
+		return
+	}
+	if id.Action == "setup_github_org_submit" {
+		if !permissions.CanManage(i) {
+			g.reply(s, i, "Manage Server permission is required.", true)
+			return
+		}
+		organization := ""
+		for _, row := range i.ModalSubmitData().Components {
+			if ar, ok := row.(*discordgo.ActionsRow); ok {
+				for _, part := range ar.Components {
+					if input, ok := part.(*discordgo.TextInput); ok && input.CustomID == "organization" {
+						organization = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(input.Value, "@")))
+					}
+				}
+			}
+		}
+		if err := sqlite.ValidateGitHubOrganization(organization); err != nil {
+			g.reply(s, i, "Enter a valid GitHub organization name.", true)
+			return
+		}
+		if err := g.db.SetGitHubOrganization(context.Background(), i.GuildID, organization); err != nil {
+			g.reply(s, i, "Could not save the GitHub organization.", true)
+			return
+		}
+		g.reply(s, i, "GitHub organization configured: `"+organization+"`.", true)
 		return
 	}
 	if id.Action == "feed_add_submit" || id.Action == "release_add_submit" || id.Action == "workflow_add_submit" {
