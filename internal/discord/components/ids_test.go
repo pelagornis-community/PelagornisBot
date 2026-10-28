@@ -12,3 +12,11 @@ func TestSignedID(t *testing.T) {
 		t.Fatal("forgery accepted")
 	}
 }
+
+func TestSetupProjectCategoryID(t *testing.T) {
+	raw := Sign("a secret", ID{"v1", "setup_project_category_set", "123456789012345678", "", ""})
+	got, err := Parse("a secret", raw)
+	if err != nil || got.Action != "setup_project_category_set" || got.Guild != "123456789012345678" {
+		t.Fatal("project setup component ID failed")
+	}
+}

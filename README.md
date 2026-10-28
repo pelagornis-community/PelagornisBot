@@ -36,19 +36,19 @@ Administrative commands require **Manage Server**. That permission is checked ag
 | --- | --- | --- |
 | `/help` | Everyone | Embed-based usage guide |
 | `/rule` | Everyone | Server rules embeds |
-| `/faq query:<text>` | Everyone | Searches published FAQ entries |
+| `/faq` | Everyone | Opens a modal to search published FAQ entries |
 | `/ticket` | Everyone | Support dashboard and private-ticket button |
-| `/setup` | Staff | Select member/pending roles and review channel |
+| `/setup` | Staff | Review and configure onboarding, staff access, and project-automation settings |
 | `/welcome` | Staff | Publishes the welcome panel in the current channel |
 | `/form` | Staff | Application-form and review-channel dashboard |
 | `/panel` | Staff | Ticket and role-panel dashboard |
 | `/role` | Staff | Role selector and self-service panel publisher |
-| `/feeds` | Staff | RSS/Atom dashboard; modal adds a feed to the current channel |
-| `/release` | Staff | GitHub Release dashboard; modal adds `owner/repository` to the current channel |
+| `/feeds` | Staff | RSS/Atom dashboard; updates are delivered to <#1091733656277618788> |
+| `/release` | Staff | GitHub Release dashboard; modal registers `owner/repository` and sends published releases to <#1091734148957339749> |
 | `/stats` | Staff | Guild-scoped form, ticket, and delivery totals |
-| `/workflow` | Staff | Workflow dashboard; accepts a name and typed JSON definition |
+| `/workflow` | Staff | Workflow dashboard; dialog accepts a name and typed JSON definition |
 
-Run a dashboard command in its destination channel. Existing `action:` options remain temporarily available for compatibility where an operation needs an existing item ID, such as pausing a feed or closing a ticket.
+Management commands deliberately have no slash-command arguments. Run the command, then complete its action through the signed dashboard controls. Release registration can be opened in any channel, but delivery is always sent to <#1091734148957339749>.
 
 ### Welcome Hero image
 
@@ -58,12 +58,14 @@ The `Read the rules` button links directly to the configured Discord rules chann
 
 ### First-time setup
 
-1. Run `/setup`; choose the member role, pending role, and private staff review channel.
-2. Run `/welcome` in the welcome channel.
-3. Run `/form` to create an application form; publish it using the returned ID if applications are needed.
-4. Run `/panel` in a support channel, or `/role` in a roles channel.
+1. Run `/setup` and choose the staff role, member role, pending role, and private staff review channel.
+2. In the same dashboard, select the private parent category for future GitHub project rooms. For this server, select <#1091726089174392833>.
+3. Set **Security alerts** to <#1565011226512203806> and **GitHub audit** to <#1565011279335129248>. These remain private staff destinations for future GitHub webhook routing.
+4. Run `/welcome` in the welcome channel.
+5. Run `/form` to create an application form; publish it using the returned ID if applications are needed.
+6. Run `/panel` in a support channel, or `/role` in a roles channel.
 
-The bot role must be above every role it manages. PelagornisBot rejects unsafe role assignments.
+The configured staff role will be granted access to future private project rooms. The bot role must be above every role it manages. PelagornisBot rejects unsafe role assignments.
 
 ## Storage and operations
 

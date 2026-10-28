@@ -11,11 +11,12 @@ func (s Service) HandleFeed(c context.Context, store *sqlite.Store, j sqlite.Job
 		DeliveryID string `json:"delivery_id"`
 		ChannelID  string `json:"channel_id"`
 		Content    string `json:"content"`
+		ImageURL   string `json:"image_url"`
 	}
 	if e := json.Unmarshal([]byte(j.Payload), &p); e != nil {
 		return e
 	}
-	id, e := s.Send(c, p.ChannelID, p.Content)
+	id, e := s.SendWithImage(c, p.ChannelID, p.Content, p.ImageURL)
 	if x := store.CompleteDelivery(c, p.DeliveryID, id, e); x != nil {
 		return x
 	}

@@ -17,6 +17,7 @@ type Worker struct {
 }
 
 func (w Worker) Run(ctx context.Context) {
+	slog.Info("scheduler worker started")
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
@@ -29,13 +30,19 @@ func (w Worker) Run(ctx context.Context) {
 				slog.Warn("claim jobs", "error", e)
 				continue
 			}
+			if len(jobs) > 0 {
+				slog.Info("scheduler claimed jobs", "count", len(jobs))
+			}
 			for _, j := range jobs {
+				slog.Info("scheduler handling job", "id", j.ID, "kind", j.Kind, "attempt", j.Attempts)
 				e := w.Handler.Handle(ctx, j)
 				if x := w.Store.FinishJob(ctx, j.ID, e); x != nil {
 					slog.Error("finish job", "error", x)
 				}
 				if e != nil {
 					slog.Warn("job failed", "id", j.ID, "kind", j.Kind, "error", e)
+				} else {
+					slog.Info("scheduler completed job", "id", j.ID, "kind", j.Kind)
 				}
 			}
 		}

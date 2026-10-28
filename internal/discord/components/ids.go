@@ -14,7 +14,7 @@ import (
 // an 80-bit HMAC while safely carrying guild, resource, and user identifiers.
 type ID struct{ Version, Action, Guild, Resource, User string }
 
-var actions = map[string]byte{"form_start": 1, "form_submit": 2, "form_approve": 3, "form_reject": 4, "form_reject_submit": 5, "ticket_open": 6, "role_toggle": 7, "rules_show": 8, "form_create": 9, "setup_member_pick": 10, "setup_pending_pick": 11, "role_pick": 12, "setup_member_set": 13, "setup_pending_set": 14, "setup_review_pick": 15, "setup_review_set": 16, "role_publish_set": 17, "panel_ticket": 18, "feed_add_modal": 19, "release_add_modal": 20, "workflow_add_modal": 21, "feed_add_submit": 22, "release_add_submit": 23, "workflow_add_submit": 24}
+var actions = map[string]byte{"form_start": 1, "form_submit": 2, "form_approve": 3, "form_reject": 4, "form_reject_submit": 5, "ticket_open": 6, "role_toggle": 7, "rules_show": 8, "form_create": 9, "setup_member_pick": 10, "setup_pending_pick": 11, "role_pick": 12, "setup_member_set": 13, "setup_pending_set": 14, "setup_review_pick": 15, "setup_review_set": 16, "role_publish_set": 17, "panel_ticket": 18, "feed_add_modal": 19, "release_add_modal": 20, "workflow_add_modal": 21, "feed_add_submit": 22, "release_add_submit": 23, "workflow_add_submit": 24, "faq_search_modal": 25, "faq_search_submit": 26, "setup_staff_pick": 27, "setup_staff_set": 28, "setup_project_category_pick": 29, "setup_project_category_set": 30, "setup_security_channel_pick": 31, "setup_security_channel_set": 32, "setup_audit_channel_pick": 33, "setup_audit_channel_set": 34}
 var names = func() map[byte]string {
 	r := map[byte]string{}
 	for n, c := range actions {

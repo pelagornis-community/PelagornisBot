@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
@@ -32,6 +33,16 @@ type Gateway struct {
 	tickets *tickets.Service
 	once    sync.Once
 }
+
+// Release announcements are deliberately kept in one staff-selected channel,
+// regardless of where a moderator opens the release dashboard.
+const releaseDeliveryChannelID = "1091734148957339749"
+const feedDeliveryChannelID = "1091733656277618788"
+
+// Kept explicit rather than deleting every unknown application command: other
+// integrations may share the Discord application. These names were replaced
+// by the current command surface and should disappear on the next startup.
+var retiredCommandNames = map[string]bool{"rules": true}
 
 func New(c config.Config, d *sqlite.Store) (*Gateway, error) {
 	s, e := discordgo.New("Bot " + c.DiscordToken)
@@ -74,6 +85,15 @@ func (g *Gateway) register() error {
 			return fmt.Errorf("register %s: %w", c.Name, err)
 		}
 	}
+	for _, old := range existing {
+		if !retiredCommandNames[old.Name] {
+			continue
+		}
+		if err = g.session.ApplicationCommandDelete(g.cfg.ApplicationID, guild, old.ID); err != nil {
+			return fmt.Errorf("delete retired %s: %w", old.Name, err)
+		}
+		slog.Info("deleted retired Discord command", "name", old.Name)
+	}
 	return nil
 }
 func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -97,7 +117,7 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 		return
 	}
 	name := i.ApplicationCommandData().Name
-	if name != "help" && name != "rule" && name != "ticket" && name != "faq" && !permissions.CanManage(i) {
+	if name != "help" && name != "rule" && name != "rules" && name != "ticket" && name != "faq" && !permissions.CanManage(i) {
 		g.reply(s, i, "Manage Server permission is required.", true)
 		return
 	}
@@ -106,7 +126,6 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 		o := i.ApplicationCommandData().Options
 		action := ""
 		url := ""
-		channel := ""
 		id := ""
 		for _, v := range o {
 			switch v.Name {
@@ -114,8 +133,6 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 				action = v.StringValue()
 			case "url":
 				url = v.StringValue()
-			case "channel":
-				channel = v.ChannelValue(s).ID
 			case "id":
 				id = v.StringValue()
 			}
@@ -126,12 +143,12 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 		}
 		switch action {
 		case "add":
-			fid, e := g.feeds.Add(context.Background(), i.GuildID, url, channel, 900)
+			fid, e := g.feeds.Add(context.Background(), i.GuildID, url, feedDeliveryChannelID, 300)
 			if e != nil {
 				g.reply(s, i, "Feed was not added: "+e.Error(), true)
 				return
 			}
-			g.reply(s, i, "Feed added: `"+fid+"`. Its first poll establishes a baseline.", true)
+			g.reply(s, i, "Feed added: `"+fid+"`. Updates will be delivered to <#"+feedDeliveryChannelID+">.", true)
 		case "list":
 			all, e := g.feeds.List(context.Background(), i.GuildID)
 			if e != nil {
@@ -163,6 +180,9 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 		g.replyEmbeds(s, i, g.helpEmbeds(), true)
 	case "rule":
 		g.replyV2(s, i, g.ruleComponents(), false)
+	case "rules":
+		// A client can briefly retain the retired command after registration.
+		g.replyV2(s, i, g.ruleComponents(), false)
 	case "welcome":
 		g.welcomeCommand(s, i)
 	case "ticket":
@@ -178,22 +198,7 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 	case "workflow":
 		g.workflowCommand(s, i)
 	case "faq":
-		q := ""
-		for _, o := range i.ApplicationCommandData().Options {
-			if o.Name == "query" {
-				q = o.StringValue()
-			}
-		}
-		rows, e := g.faq.Search(context.Background(), i.GuildID, q)
-		if e != nil {
-			g.reply(s, i, "FAQ search failed.", true)
-			return
-		}
-		if len(rows) == 0 {
-			g.reply(s, i, "No FAQ entry found.", true)
-			return
-		}
-		g.reply(s, i, rows[0], true)
+		g.dashboard(s, i, "faq")
 	default:
 		g.reply(s, i, "Unknown command. Run /help for available commands.", true)
 	}
@@ -201,15 +206,15 @@ func (g *Gateway) interaction(s *discordgo.Session, i *discordgo.InteractionCrea
 
 func (g *Gateway) helpEmbeds() []*discordgo.MessageEmbed {
 	return []*discordgo.MessageEmbed{
-		{Title: "✦ PelagornisBot Guide", Description: "Use the commands below to get started. Commands marked **Staff** require the **Manage Server** permission.", Color: 0x5865F2, Fields: []*discordgo.MessageEmbedField{
-			{Name: "📖 Everyone", Value: "`/rule` — Read server rules\n`/faq query:<keyword>` — Search published FAQ entries\n`/ticket action:open` — Open a private support ticket", Inline: false},
-			{Name: "🧭 First-time staff setup", Value: "`/setup action:member-role role:@Member`\n`/setup action:pending-role role:@Pending`\n`/setup action:review-channel channel:#staff-review`\n`/welcome channel:#welcome`", Inline: false},
-			{Name: "📝 Applications · panels", Value: "`/form action:create` → copy the returned ID\n`/form action:publish id:<form-id> channel:#apply`\n`/panel type:ticket channel:#support`\n`/role channel:#roles role:@Role`", Inline: false},
+		{Title: "✦ PelagornisBot Guide", Description: "Run a command, then use its buttons, selectors, or dialog. Commands marked **Staff** require **Manage Server**.", Color: 0x5865F2, Fields: []*discordgo.MessageEmbedField{
+			{Name: "📖 Everyone", Value: "`/rule` — Read server rules\n`/faq` — Search published FAQ entries\n`/ticket` — Open a private support ticket", Inline: false},
+			{Name: "🧭 First-time staff setup", Value: "`/setup` — Set member/pending roles and review channel\n`/welcome` — Publish the welcome panel in the current channel", Inline: false},
+			{Name: "📝 Applications · panels", Value: "`/form` — Create and manage applications\n`/panel` — Publish ticket or role panels\n`/role` — Publish a self-service role button", Inline: false},
 		}, Footer: &discordgo.MessageEmbedFooter{Text: "PelagornisBot · Select values from Discord's command menu to avoid typos."}},
 		{Title: "Staff tools", Color: 0x57F287, Fields: []*discordgo.MessageEmbedField{
-			{Name: "🎫 Tickets", Value: "`/ticket action:close id:<ticket-id>`\n`/ticket action:reopen id:<ticket-id>`\n`/ticket action:claim id:<ticket-id>`\n`/ticket action:assign id:<ticket-id> user:@staff`", Inline: false},
-			{Name: "📰 Feeds · releases", Value: "`/feeds action:add url:<rss-url> channel:#news`\n`/feeds action:list` · `/feeds action:pause id:<source-id>`\n`/release action:add repo:owner/repo channel:#releases`\n`/release action:list` · `/release action:pause id:<source-id>`", Inline: false},
-			{Name: "⚙️ Operations", Value: "`/stats` — Guild activity totals\n`/workflow action:list` — List workflows\n`/workflow action:add name:<name> definition:<json>`\n`/workflow action:pause id:<workflow-id>`", Inline: false},
+			{Name: "🎫 Tickets", Value: "`/ticket` — Open the support center", Inline: false},
+			{Name: "📰 Feeds · releases", Value: "`/feeds` — Add an RSS/Atom feed\n`/release` — Register a GitHub repository\nRelease announcements always go to <#1091734148957339749>.", Inline: false},
+			{Name: "⚙️ Operations", Value: "`/stats` — Guild activity totals\n`/workflow` — Create a workflow", Inline: false},
 		}, Footer: &discordgo.MessageEmbedFooter{Text: "Source IDs are returned by the matching list command."}},
 	}
 }
@@ -222,10 +227,14 @@ func (g *Gateway) dashboard(s *discordgo.Session, i *discordgo.InteractionCreate
 	}
 	switch kind {
 	case "setup":
-		title, description = "⚙️ Server setup", "Configure onboarding roles and the private staff review channel."
+		title, description = "⚙️ Server setup", g.setupDescription(i.GuildID)
+		button("setup_staff_pick", "Staff role", "🛡️", discordgo.PrimaryButton)
 		button("setup_member_pick", "Member role", "👤", discordgo.PrimaryButton)
 		button("setup_pending_pick", "Pending role", "⏳", discordgo.SecondaryButton)
 		button("setup_review_pick", "Review channel", "🔒", discordgo.SecondaryButton)
+		button("setup_project_category_pick", "Project category", "📁", discordgo.SecondaryButton)
+		button("setup_security_channel_pick", "Security alerts", "🔐", discordgo.SecondaryButton)
+		button("setup_audit_channel_pick", "GitHub audit", "🧾", discordgo.SecondaryButton)
 	case "form":
 		title, description = "📝 Form center", "Create an application form or configure where staff reviews are delivered."
 		button("form_create", "Create application", "➕", discordgo.PrimaryButton)
@@ -234,10 +243,10 @@ func (g *Gateway) dashboard(s *discordgo.Session, i *discordgo.InteractionCreate
 		title, description = "🎫 Support center", "Open a private support ticket. Staff management remains available from the ticket dashboard commands."
 		button("ticket_open", "Open ticket", "🎫", discordgo.PrimaryButton)
 	case "feeds":
-		title, description = "📰 Feed center", "Add an RSS or Atom feed to post into this channel."
+		title, description = "📰 Feed center", "Add an RSS or Atom feed. Updates are delivered to <#"+feedDeliveryChannelID+">."
 		button("feed_add_modal", "Add RSS feed", "➕", discordgo.PrimaryButton)
 	case "release":
-		title, description = "🚀 Release center", "Subscribe this channel to GitHub releases."
+		title, description = "🚀 Release center", "Register a GitHub repository. Published releases are delivered to <#"+releaseDeliveryChannelID+">."
 		button("release_add_modal", "Add GitHub release", "➕", discordgo.PrimaryButton)
 	case "role":
 		title, description = "✨ Role panel", "Choose a role to publish a self-service role button in this channel."
@@ -249,8 +258,58 @@ func (g *Gateway) dashboard(s *discordgo.Session, i *discordgo.InteractionCreate
 	case "workflow":
 		title, description = "⚡ Workflow center", "Create a typed workflow from a name and JSON definition."
 		button("workflow_add_modal", "Create workflow", "➕", discordgo.PrimaryButton)
+	case "faq":
+		title, description = "❔ FAQ search", "Search the published answers for this server."
+		button("faq_search_modal", "Search FAQ", "🔎", discordgo.PrimaryButton)
 	}
-	g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: title, Description: description, Color: 0x5865F2, Footer: &discordgo.MessageEmbedFooter{Text: "PelagornisBot · Changes require administrator permission."}}, []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}}, true)
+	rows := []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}}
+	if kind == "setup" {
+		rows = []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: buttons[:3]},
+			discordgo.ActionsRow{Components: buttons[3:]},
+		}
+	}
+	g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: title, Description: description, Color: 0x5865F2, Footer: &discordgo.MessageEmbedFooter{Text: "PelagornisBot · Changes require administrator permission."}}, rows, true)
+}
+
+func (g *Gateway) setupDescription(guild string) string {
+	ctx := context.Background()
+	role := func(kind, label string) string {
+		id, err := g.db.Role(ctx, guild, kind)
+		if err == nil && id != "" {
+			return "• " + label + ": <@&" + id + ">"
+		}
+		if err != nil && err != sql.ErrNoRows {
+			return "• " + label + ": _could not load_"
+		}
+		return "• " + label + ": _not set_"
+	}
+	channel := func(id string, err error, label string) string {
+		if err == nil && id != "" {
+			return "• " + label + ": <#" + id + ">"
+		}
+		if err != nil && err != sql.ErrNoRows {
+			return "• " + label + ": _could not load_"
+		}
+		return "• " + label + ": _not set_"
+	}
+	review, reviewErr := g.forms.ReviewChannel(ctx, guild)
+	category, categoryErr := g.db.ProjectCategory(ctx, guild)
+	security, securityErr := g.db.GitHubNotificationChannel(ctx, guild, "security")
+	audit, auditErr := g.db.GitHubNotificationChannel(ctx, guild, "audit")
+	return "Configure the server once, then future project automation can inherit these permissions.\n\n" + strings.Join([]string{
+		"## Access & onboarding",
+		role("staff", "Staff role"),
+		role("member", "Member role"),
+		role("pending", "Pending role"),
+		"\n## Private review",
+		channel(review, reviewErr, "Review channel"),
+		"\n## GitHub project automation",
+		channel(category, categoryErr, "Project parent category"),
+		channel(security, securityErr, "Security alerts"),
+		channel(audit, auditErr, "GitHub audit"),
+		"-# New project rooms will be private to the configured staff role. GitHub webhook delivery is configured separately.",
+	}, "\n")
 }
 
 func (g *Gateway) ruleComponents() []discordgo.MessageComponent {
@@ -287,7 +346,7 @@ func (g *Gateway) welcomeCommand(s *discordgo.Session, i *discordgo.InteractionC
 	}
 	rulesURL := "https://discord.com/channels/" + i.GuildID + "/1563951289027666122"
 	ticket := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "ticket_open", Guild: i.GuildID})
-	message := &discordgo.MessageSend{Components: []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: "# ✦ Welcome to Pelagornis\nA calm place to learn, build, and help one another.\n\n## 📌 Get started\n1. Read the server rules\n2. Complete an application if one is posted\n3. Use the right channel and check its pins\n\n## 🛟 Need help?\nOpen a private ticket and the staff team will assist you.\n\n## 🔒 Safety first\nNever share passwords, API keys, tokens, or recovery codes.\n\n-# Pelagornis · Welcome aboard"}}}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+	message := &discordgo.MessageSend{Components: []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: "# ✦ Welcome to the Official Pelagornis Discord Server\nA calm place to learn, build, and help one another.\n\n## 📌 Get started\n1. Read the server rules\n2. Complete an application if one is posted\n3. Use the right channel and check its pins\n\n## 🛟 Need help?\nOpen a private ticket and the staff team will assist you.\n\n## 🔒 Safety first\nNever share passwords, API keys, tokens, or recovery codes.\n\n-# Pelagornis · Welcome aboard"}}}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{URL: rulesURL, Label: "Read the rules", Emoji: &discordgo.ComponentEmoji{Name: "📜"}, Style: discordgo.LinkButton},
 		discordgo.Button{CustomID: ticket, Label: "Get support", Emoji: &discordgo.ComponentEmoji{Name: "🛟"}, Style: discordgo.SecondaryButton},
 	}}}, Flags: discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}
@@ -508,62 +567,7 @@ func (g *Gateway) publishRolePanel(s *discordgo.Session, i *discordgo.Interactio
 	g.reply(s, i, "Role panel published in <#"+channelID+">.", true)
 }
 func (g *Gateway) releaseCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	action, repo, channelID, id := "", "", "", ""
-	for _, o := range i.ApplicationCommandData().Options {
-		switch o.Name {
-		case "action":
-			action = o.StringValue()
-		case "repo":
-			repo = o.StringValue()
-		case "channel":
-			if c := o.ChannelValue(s); c != nil {
-				channelID = c.ID
-			}
-		case "id":
-			id = o.StringValue()
-		}
-	}
-	if action == "" {
-		g.dashboard(s, i, "release")
-		return
-	}
-	switch action {
-	case "add":
-		if repo == "" || channelID == "" {
-			g.reply(s, i, "Provide repository (owner/name) and destination channel.", true)
-			return
-		}
-		fid, err := g.feeds.AddRelease(context.Background(), i.GuildID, repo, channelID, 900)
-		if err != nil {
-			g.reply(s, i, "Release source was not added: "+err.Error(), true)
-			return
-		}
-		g.reply(s, i, "GitHub release source added: `"+fid+"`. An initial release check is queued now.", true)
-	case "list":
-		all, err := g.feeds.List(context.Background(), i.GuildID)
-		if err != nil {
-			g.reply(s, i, "Could not list release sources.", true)
-			return
-		}
-		out := "No GitHub release sources configured."
-		for _, f := range all {
-			if f.Kind == "github_release" {
-				if out == "No GitHub release sources configured." {
-					out = "GitHub release sources:\n"
-				}
-				out += "`" + f.ID + "` — " + f.Repo + " → <#" + f.ChannelID + ">\n"
-			}
-		}
-		g.reply(s, i, out, true)
-	case "pause":
-		if err := g.feeds.Pause(context.Background(), i.GuildID, id); err != nil {
-			g.reply(s, i, "Release source was not paused: "+err.Error(), true)
-			return
-		}
-		g.reply(s, i, "Release source paused.", true)
-	default:
-		g.reply(s, i, "Use add, list, or pause.", true)
-	}
+	g.dashboard(s, i, "release")
 }
 func (g *Gateway) statsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	ctx := context.Background()
@@ -774,6 +778,13 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		g.reviewComponent(s, i, id)
 		return
 	}
+	if id.Action == "faq_search_modal" {
+		custom := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "faq_search_submit", Guild: i.GuildID, User: i.Member.User.ID})
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: custom, Title: "Search FAQ", Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "query", Label: "Keyword", Style: discordgo.TextInputShort, Required: true, MaxLength: 120}}}}}}); err != nil {
+			slog.Error("discord FAQ modal response failed", "error", err)
+		}
+		return
+	}
 	if id.Action == "form_create" {
 		f, err := g.forms.Create(context.Background(), i.GuildID, "application", forms.Schema{Title: "Community application", Fields: []forms.Field{{ID: "nickname", Label: "Nickname", Type: "short_text", Required: true, Max: 100}, {ID: "intro", Label: "Introduce yourself", Type: "paragraph", Required: true, Max: 1000}}})
 		if err != nil {
@@ -783,12 +794,16 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		g.reply(s, i, "Draft created: `"+f.ID+"`. Open `/form` again and use the legacy publish option until the publish picker is added.", true)
 		return
 	}
-	if id.Action == "setup_member_pick" || id.Action == "setup_pending_pick" || id.Action == "role_pick" {
+	if id.Action == "setup_member_pick" || id.Action == "setup_pending_pick" || id.Action == "setup_staff_pick" || id.Action == "role_pick" {
 		setAction := "setup_member_set"
 		label := "Choose the member role"
 		if id.Action == "setup_pending_pick" {
 			setAction = "setup_pending_set"
 			label = "Choose the pending role"
+		}
+		if id.Action == "setup_staff_pick" {
+			setAction = "setup_staff_set"
+			label = "Choose the staff role for private project rooms"
 		}
 		if id.Action == "role_pick" {
 			setAction = "role_publish_set"
@@ -803,7 +818,21 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: "🔒 Review channel", Description: "Choose the private staff review channel.", Color: 0x5865F2}, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{MenuType: discordgo.ChannelSelectMenu, CustomID: custom, Placeholder: "Select a channel", MinValues: ptrInt(1), MaxValues: 1, ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText}}}}}, true)
 		return
 	}
-	if id.Action == "setup_member_set" || id.Action == "setup_pending_set" || id.Action == "setup_review_set" || id.Action == "role_publish_set" {
+	if id.Action == "setup_project_category_pick" {
+		custom := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "setup_project_category_set", Guild: i.GuildID})
+		g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: "📁 Project parent category", Description: "Choose the private category where the bot will create project rooms after a GitHub repository is detected.", Color: 0x5865F2}, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{MenuType: discordgo.ChannelSelectMenu, CustomID: custom, Placeholder: "Select a category", MinValues: ptrInt(1), MaxValues: 1, ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildCategory}}}}}, true)
+		return
+	}
+	if id.Action == "setup_security_channel_pick" || id.Action == "setup_audit_channel_pick" {
+		kind, title, description := "security", "🔐 GitHub security alerts", "Choose the private channel for high/critical GitHub security alerts."
+		if id.Action == "setup_audit_channel_pick" {
+			kind, title, description = "audit", "🧾 GitHub audit", "Choose the private channel for repository lifecycle and administrative GitHub events."
+		}
+		custom := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "setup_" + kind + "_channel_set", Guild: i.GuildID})
+		g.replyEmbedComponents(s, i, &discordgo.MessageEmbed{Title: title, Description: description, Color: 0x5865F2}, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{MenuType: discordgo.ChannelSelectMenu, CustomID: custom, Placeholder: "Select a private text channel", MinValues: ptrInt(1), MaxValues: 1, ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText}}}}}, true)
+		return
+	}
+	if id.Action == "setup_member_set" || id.Action == "setup_pending_set" || id.Action == "setup_staff_set" || id.Action == "setup_review_set" || id.Action == "setup_project_category_set" || id.Action == "setup_security_channel_set" || id.Action == "setup_audit_channel_set" || id.Action == "role_publish_set" {
 		values := i.MessageComponentData().Values
 		if len(values) != 1 {
 			g.reply(s, i, "Select exactly one item.", true)
@@ -818,6 +847,27 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 			}
 			return
 		}
+		if id.Action == "setup_project_category_set" {
+			if err := g.db.SetProjectCategory(context.Background(), i.GuildID, value); err != nil {
+				g.reply(s, i, "Could not save the project category.", true)
+			} else {
+				g.reply(s, i, "Project parent category configured: <#"+value+">. New GitHub project rooms will be created there once webhook automation is enabled.", true)
+			}
+			return
+		}
+		if id.Action == "setup_security_channel_set" || id.Action == "setup_audit_channel_set" {
+			kind := "security"
+			label := "GitHub security alerts"
+			if id.Action == "setup_audit_channel_set" {
+				kind, label = "audit", "GitHub audit"
+			}
+			if err := g.db.SetGitHubNotificationChannel(context.Background(), i.GuildID, kind, value); err != nil {
+				g.reply(s, i, "Could not save the "+label+" channel.", true)
+			} else {
+				g.reply(s, i, label+" channel configured: <#"+value+">.", true)
+			}
+			return
+		}
 		if id.Action == "role_publish_set" {
 			g.publishRolePanel(s, i, i.ChannelID, value)
 			return
@@ -825,6 +875,9 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		kind := "member"
 		if id.Action == "setup_pending_set" {
 			kind = "pending"
+		}
+		if id.Action == "setup_staff_set" {
+			kind = "staff"
 		}
 		if err := g.db.SetRole(context.Background(), i.GuildID, kind, value); err != nil {
 			g.reply(s, i, "Could not save the role configuration.", true)
@@ -850,7 +903,9 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 			title = "Create workflow"
 			inputs = []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "name", Label: "Workflow name", Style: discordgo.TextInputShort, Required: true, MaxLength: 100}}}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "definition", Label: "Definition JSON", Style: discordgo.TextInputParagraph, Required: true, MaxLength: 4000}}}}
 		}
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: custom, Title: title, Components: inputs}})
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: custom, Title: title, Components: inputs}}); err != nil {
+			slog.Error("discord dashboard modal response failed", "action", id.Action, "error", err)
+		}
 		return
 	}
 	if id.Action == "ticket_open" {
@@ -891,7 +946,9 @@ func (g *Gateway) component(s *discordgo.Session, i *discordgo.InteractionCreate
 		rows = append(rows, discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: field.ID, Label: field.Label, Style: style, Required: field.Required, MaxLength: field.Max}}})
 	}
 	modal := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "form_submit", Guild: id.Guild, Resource: id.Resource, User: id.User})
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: modal, Title: f.Schema.Title, Components: rows}})
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: modal, Title: f.Schema.Title, Components: rows}}); err != nil {
+		slog.Error("discord form modal response failed", "error", err)
+	}
 }
 func (g *Gateway) toggleRole(s *discordgo.Session, i *discordgo.InteractionCreate, roleID string) {
 	if i.Member == nil || i.Member.User == nil {
@@ -935,6 +992,41 @@ func (g *Gateway) modal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		g.rejectModal(s, i, id)
 		return
 	}
+	if id.Action == "faq_search_submit" {
+		query := ""
+		for _, row := range i.ModalSubmitData().Components {
+			if ar, ok := row.(*discordgo.ActionsRow); ok {
+				for _, part := range ar.Components {
+					if input, ok := part.(*discordgo.TextInput); ok && input.CustomID == "query" {
+						query = strings.TrimSpace(input.Value)
+					}
+				}
+			}
+		}
+		if query == "" {
+			g.reply(s, i, "Enter a keyword to search the FAQ.", true)
+			return
+		}
+		entries, err := g.faq.Search(context.Background(), i.GuildID, query)
+		if err != nil {
+			g.reply(s, i, "FAQ search is temporarily unavailable.", true)
+			return
+		}
+		if len(entries) == 0 {
+			g.reply(s, i, "No published FAQ matched `"+query+"`.", true)
+			return
+		}
+		text := "FAQ results for `" + query + ":`\n\n"
+		for _, entry := range entries {
+			if len(text)+len(entry)+3 > 3500 {
+				text += "\n… additional matches omitted."
+				break
+			}
+			text += entry + "\n\n"
+		}
+		g.reply(s, i, text, true)
+		return
+	}
 	if id.Action == "feed_add_submit" || id.Action == "release_add_submit" || id.Action == "workflow_add_submit" {
 		if !permissions.CanManage(i) {
 			g.reply(s, i, "Manage Server permission is required.", true)
@@ -951,20 +1043,20 @@ func (g *Gateway) modal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			}
 		}
 		if id.Action == "feed_add_submit" {
-			fid, err := g.feeds.Add(context.Background(), i.GuildID, values["value"], i.ChannelID, 900)
+			fid, err := g.feeds.Add(context.Background(), i.GuildID, values["value"], feedDeliveryChannelID, 300)
 			if err != nil {
 				g.reply(s, i, "Feed was not added: "+err.Error(), true)
 			} else {
-				g.reply(s, i, "Feed added: `"+fid+"`.", true)
+				g.reply(s, i, "Feed added: `"+fid+"`. Updates will be delivered to <#"+feedDeliveryChannelID+">.", true)
 			}
 			return
 		}
 		if id.Action == "release_add_submit" {
-			fid, err := g.feeds.AddRelease(context.Background(), i.GuildID, values["value"], i.ChannelID, 900)
+			fid, err := g.feeds.AddRelease(context.Background(), i.GuildID, values["value"], releaseDeliveryChannelID, 300)
 			if err != nil {
 				g.reply(s, i, "Release source was not added: "+err.Error(), true)
 			} else {
-				g.reply(s, i, "GitHub release source added: `"+fid+"`. An initial release check is queued now.", true)
+				g.reply(s, i, "GitHub release source added: `"+fid+"`. An initial check is queued; published releases will be delivered to <#"+releaseDeliveryChannelID+">.", true)
 			}
 			return
 		}
@@ -1050,7 +1142,9 @@ func (g *Gateway) reviewComponent(s *discordgo.Session, i *discordgo.Interaction
 	}
 	if id.Action == "form_reject" {
 		modal := components.Sign(g.cfg.SessionSecret, components.ID{Version: "v1", Action: "form_reject_submit", Guild: id.Guild, Resource: id.Resource, User: i.Member.User.ID})
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: modal, Title: "Reject application", Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "reason", Label: "Reason", Style: discordgo.TextInputParagraph, Required: true, MaxLength: 500}}}}}})
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &discordgo.InteractionResponseData{CustomID: modal, Title: "Reject application", Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "reason", Label: "Reason", Style: discordgo.TextInputParagraph, Required: true, MaxLength: 500}}}}}}); err != nil {
+			slog.Error("discord rejection modal response failed", "error", err)
+		}
 		return
 	}
 	g.completeReview(s, i, id.Resource, "approved", "")
@@ -1125,7 +1219,9 @@ func (g *Gateway) reply(s *discordgo.Session, i *discordgo.InteractionCreate, te
 		flags = discordgo.MessageFlagsEphemeral
 	}
 	title, color := responseStyle(text)
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: v2Container(color, "## "+title+"\n"+text+"\n\n-# PelagornisBot"), Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}})
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: v2Container(color, "## "+title+"\n"+text+"\n\n-# PelagornisBot"), Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}}); err != nil {
+		slog.Error("discord interaction response failed", "error", err)
+	}
 }
 func responseStyle(text string) (string, int) {
 	lower := strings.ToLower(text)
@@ -1161,7 +1257,9 @@ func (g *Gateway) replyV2(s *discordgo.Session, i *discordgo.InteractionCreate, 
 	if ephemeral {
 		flags |= discordgo.MessageFlagsEphemeral
 	}
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: components, Flags: flags, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}})
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: components, Flags: flags, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}}); err != nil {
+		slog.Error("discord v2 interaction response failed", "error", err)
+	}
 }
 func (g *Gateway) replyEmbedComponents(s *discordgo.Session, i *discordgo.InteractionCreate, embed *discordgo.MessageEmbed, components []discordgo.MessageComponent, ephemeral bool) {
 	flags := discordgo.MessageFlags(0)
@@ -1177,7 +1275,9 @@ func (g *Gateway) replyEmbedComponents(s *discordgo.Session, i *discordgo.Intera
 	}
 	all := []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}}}}
 	all = append(all, components...)
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: all, Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}})
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseChannelMessageWithSource, Data: &discordgo.InteractionResponseData{Components: all, Flags: flags | discordgo.MessageFlagsIsComponentsV2, AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}}}); err != nil {
+		slog.Error("discord dashboard response failed", "error", err)
+	}
 }
 func ptrInt(v int) *int { return &v }
 func (g *Gateway) memberJoin(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
