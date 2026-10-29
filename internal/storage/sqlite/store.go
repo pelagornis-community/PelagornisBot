@@ -50,7 +50,9 @@ func (s *Store) ClaimJobs(ctx context.Context, n int) ([]Job, error) {
 		return nil, e
 	}
 	defer tx.Rollback()
-	rows, e := tx.QueryContext(ctx, `select id,guild_id,kind,payload_json,idempotency_key,attempts from jobs where status='pending' and available_at<=datetime('now') and (lease_until is null or lease_until<datetime('now')) order by available_at limit ?`, n)
+	// A process can die after claiming a job or FinishJob can fail. Expired
+	// running leases are therefore eligible for recovery as well as pending jobs.
+	rows, e := tx.QueryContext(ctx, `select id,guild_id,kind,payload_json,idempotency_key,attempts from jobs where available_at<=datetime('now') and (status='pending' or (status='running' and lease_until<datetime('now'))) order by available_at limit ?`, n)
 	if e != nil {
 		return nil, e
 	}
@@ -61,7 +63,7 @@ func (s *Store) ClaimJobs(ctx context.Context, n int) ([]Job, error) {
 		if e = rows.Scan(&j.ID, &j.GuildID, &j.Kind, &j.Payload, &j.Key, &j.Attempts); e != nil {
 			return nil, e
 		}
-		if _, e = tx.ExecContext(ctx, `update jobs set status='running',lease_until=datetime('now','+5 minutes'),attempts=attempts+1 where id=? and status='pending'`, j.ID); e != nil {
+		if _, e = tx.ExecContext(ctx, `update jobs set status='running',lease_until=datetime('now','+5 minutes'),attempts=attempts+1 where id=? and (status='pending' or (status='running' and lease_until<datetime('now')))`, j.ID); e != nil {
 			return nil, e
 		}
 		j.Attempts++
@@ -83,7 +85,11 @@ func (s *Store) FinishJob(ctx context.Context, id string, jobErr error) error {
 		_, e := s.DB.ExecContext(ctx, `update jobs set status='done',lease_until=null where id=?`, id)
 		return e
 	}
-	_, e := s.DB.ExecContext(ctx, `update jobs set status=case when attempts>=5 then 'dead' else 'pending' end,available_at=datetime('now','+' || (case when attempts<5 then attempts else 5 end)*30 || ' seconds'),lease_until=null,last_error=? where id=?`, jobErr.Error(), id)
+	// Parenthesize the multiplication before concatenating the SQLite datetime
+	// modifier. Without this, SQLite evaluates the original expression as a
+	// numeric operation on a string (for example "+1" * 30), yielding NULL for
+	// the modifier and violating jobs.available_at's NOT NULL constraint.
+	_, e := s.DB.ExecContext(ctx, `update jobs set status=case when attempts>=5 then 'dead' else 'pending' end,available_at=datetime('now','+' || ((case when attempts<5 then attempts else 5 end)*30) || ' seconds'),lease_until=null,last_error=? where id=?`, jobErr.Error(), id)
 	return e
 }
 

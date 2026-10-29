@@ -212,11 +212,11 @@ func (s WebhookService) ensureProject(ctx context.Context, guild string, repo st
 	}
 	category, err := s.Store.ProjectCategory(ctx, guild)
 	if err != nil {
-		return p, fmt.Errorf("project category is not configured")
+		return p, fmt.Errorf("project category is not configured for guild %s: %w", guild, err)
 	}
 	staff, err := s.Store.Role(ctx, guild, "staff")
 	if err != nil {
-		return p, fmt.Errorf("staff role is not configured")
+		return p, fmt.Errorf("staff role is not configured for guild %s: %w", guild, err)
 	}
 	channels, err := s.Discord.GuildChannels(guild)
 	if err != nil {
