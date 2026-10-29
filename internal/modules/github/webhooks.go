@@ -18,6 +18,7 @@ type Discord interface {
 	delivery.Sender
 	GuildChannelCreateComplex(string, discordgo.GuildChannelCreateData, ...discordgo.RequestOption) (*discordgo.Channel, error)
 	GuildChannels(string, ...discordgo.RequestOption) ([]*discordgo.Channel, error)
+	ChannelEdit(string, *discordgo.ChannelEdit, ...discordgo.RequestOption) (*discordgo.Channel, error)
 }
 
 type WebhookService struct {
@@ -97,12 +98,20 @@ func (s WebhookService) Handle(ctx context.Context, j sqlite.Job) error {
 	if p.Repository.FullName == "" {
 		return nil
 	}
-	if queued.Event == "repository" && p.Action == "deleted" {
+	if queued.Event == "repository" && (p.Action == "deleted" || p.Action == "archived") {
+		project, projectErr := s.Store.GitHubProject(ctx, j.GuildID, p.Repository.FullName)
+		if projectErr == nil {
+			if err := s.archiveProject(ctx, j.GuildID, p.Repository, project); err != nil {
+				return err
+			}
+		} else if projectErr != sql.ErrNoRows {
+			return projectErr
+		}
 		audit, _ := s.Store.GitHubNotificationChannel(ctx, j.GuildID, "audit")
 		if audit == "" {
 			return nil
 		}
-		_, err := (delivery.Service{Discord: s.Discord}).Send(ctx, audit, "GitHub · ["+p.Repository.FullName+"] Repository deleted\nTriggered by @"+p.Sender.Login+"\n"+p.Repository.HTMLURL)
+		_, err := (delivery.Service{Discord: s.Discord}).Send(ctx, audit, "GitHub · ["+p.Repository.FullName+"] Repository "+p.Action+"\nProject channels were archived and locked.\nTriggered by @"+p.Sender.Login+"\n"+p.Repository.HTMLURL)
 		return err
 	}
 
@@ -129,12 +138,6 @@ func (s WebhookService) Handle(ctx context.Context, j sqlite.Job) error {
 	switch queued.Event {
 	case "repository":
 		if p.Action == "created" || p.Action == "archived" || p.Action == "unarchived" || p.Action == "renamed" || p.Action == "deleted" || p.Action == "transferred" {
-			if p.Action == "archived" || p.Action == "unarchived" {
-				project.Archived = p.Action == "archived"
-				if err := s.Store.SaveGitHubProject(ctx, j.GuildID, project); err != nil {
-					return err
-				}
-			}
 			audit, _ := s.Store.GitHubNotificationChannel(ctx, j.GuildID, "audit")
 			return send(audit, "Repository "+p.Action, "Triggered by @"+p.Sender.Login, p.Repository.HTMLURL)
 		}
@@ -205,6 +208,9 @@ func (s WebhookService) ensureProject(ctx context.Context, guild string, repo st
 }) (sqlite.GitHubProject, error) {
 	p, err := s.Store.GitHubProject(ctx, guild, repo.FullName)
 	if err == nil {
+		if p.Archived {
+			return s.restoreProject(ctx, guild, repo, p)
+		}
 		return p, nil
 	}
 	if err != sql.ErrNoRows {
@@ -232,7 +238,7 @@ func (s WebhookService) ensureProject(ctx context.Context, guild string, repo st
 		return ""
 	}
 	main, ci := find(base), find(base+"-ci")
-	overwrites := []*discordgo.PermissionOverwrite{{ID: guild, Type: discordgo.PermissionOverwriteTypeRole, Deny: discordgo.PermissionViewChannel}, {ID: staff, Type: discordgo.PermissionOverwriteTypeRole, Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory}}
+	overwrites := projectOverwrites(guild, staff, false)
 	if main == "" {
 		ch, e := s.Discord.GuildChannelCreateComplex(guild, discordgo.GuildChannelCreateData{Name: base, Type: discordgo.ChannelTypeGuildText, ParentID: category, Topic: "GitHub project: " + repo.FullName, PermissionOverwrites: overwrites})
 		if e != nil {
@@ -254,6 +260,61 @@ func (s WebhookService) ensureProject(ctx context.Context, guild string, repo st
 	return p, nil
 }
 
+func (s WebhookService) archiveProject(ctx context.Context, guild string, repo struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	HTMLURL  string `json:"html_url"`
+}, p sqlite.GitHubProject) error {
+	staff, err := s.Store.Role(ctx, guild, "staff")
+	if err != nil {
+		return fmt.Errorf("staff role is not configured for guild %s: %w", guild, err)
+	}
+	base := discordName(repo.Name)
+	if _, err = s.Discord.ChannelEdit(p.ChannelID, &discordgo.ChannelEdit{Name: archivedChannelName(base), PermissionOverwrites: projectOverwrites(guild, staff, true)}); err != nil {
+		return err
+	}
+	if _, err = s.Discord.ChannelEdit(p.CIChannelID, &discordgo.ChannelEdit{Name: archivedChannelName(base + "-ci"), PermissionOverwrites: projectOverwrites(guild, staff, true)}); err != nil {
+		return err
+	}
+	p.Archived = true
+	return s.Store.SaveGitHubProject(ctx, guild, p)
+}
+
+func (s WebhookService) restoreProject(ctx context.Context, guild string, repo struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	HTMLURL  string `json:"html_url"`
+}, p sqlite.GitHubProject) (sqlite.GitHubProject, error) {
+	staff, err := s.Store.Role(ctx, guild, "staff")
+	if err != nil {
+		return p, fmt.Errorf("staff role is not configured for guild %s: %w", guild, err)
+	}
+	base := discordName(repo.Name)
+	if _, err = s.Discord.ChannelEdit(p.ChannelID, &discordgo.ChannelEdit{Name: base, PermissionOverwrites: projectOverwrites(guild, staff, false)}); err != nil {
+		return p, err
+	}
+	if _, err = s.Discord.ChannelEdit(p.CIChannelID, &discordgo.ChannelEdit{Name: base + "-ci", PermissionOverwrites: projectOverwrites(guild, staff, false)}); err != nil {
+		return p, err
+	}
+	p.Archived = false
+	if err = s.Store.SaveGitHubProject(ctx, guild, p); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+func projectOverwrites(guild, staff string, locked bool) []*discordgo.PermissionOverwrite {
+	staffOverwrite := &discordgo.PermissionOverwrite{ID: staff, Type: discordgo.PermissionOverwriteTypeRole, Allow: discordgo.PermissionViewChannel | discordgo.PermissionReadMessageHistory}
+	if locked {
+		staffOverwrite.Deny = discordgo.PermissionSendMessages
+	} else {
+		staffOverwrite.Allow |= discordgo.PermissionSendMessages
+	}
+	return []*discordgo.PermissionOverwrite{{ID: guild, Type: discordgo.PermissionOverwriteTypeRole, Deny: discordgo.PermissionViewChannel}, staffOverwrite}
+}
+
 func discordName(value string) string {
 	value = strings.ToLower(value)
 	value = strings.Map(func(r rune) rune {
@@ -271,6 +332,7 @@ func discordName(value string) string {
 	}
 	return value
 }
+func archivedChannelName(value string) string { return "archived-" + discordName(value) }
 func firstURL(a, b string) string {
 	if a != "" {
 		return a
